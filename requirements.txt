@@ -1,0 +1,3 @@
+aiodocker>=0.22.0
+aiohttp>=3.10.2
+dbus-fast>=2.22.1
