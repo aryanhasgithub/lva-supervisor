@@ -35,30 +35,25 @@ class DockerAudio(DockerInterface):
     async def run(self) -> None:
         """Create and start the lva-audio container."""
         _LOGGER.info("[%s] Creating container", self.name)
-        config : dict[str, object] = {
+        config : dict[str,object] = {
             "Image": self.image,
             "Env": [
                 "XDG_RUNTIME_DIR=/run/user/0",
                 "PULSE_RUNTIME_PATH=/run/lva/audio/pulse",
             ],
             "HostConfig": {
+                "Privileged": True,
                 "NetworkMode": DOCKER_NETWORK,
-                "Devices": [
-                    {
-                        "PathOnHost":      "/dev/snd",
-                        "PathInContainer": "/dev/snd",
-                        "CgroupPermissions": "mrw",
-                    }
-                ],
                 "Binds": [
-                    "/run/lva/audio:/run/lva/audio:rw",  # pulse socket at /run/lva/audio/pulse/native
+                    "/run/lva/audio:/run/lva/audio:rw",
                     "/var/lib/lva/audio:/var/lib/lva/audio:rw",
+                    "/run/udev:/run/udev:ro",
                 ],
                 "RestartPolicy": {"Name": "unless-stopped"},
             },
         }
         try:
-            await self.coresys.docker.containers.run(config, name=self.name) # type: ignore[reportUnknownMemberType]
+            await self.coresys.docker.containers.run(config, name=self.name)
             _LOGGER.info("[%s] Container started", self.name)
         except AioDockerError as err:
             raise DockerError(f"[{self.name}] Failed to run: {err}") from err
