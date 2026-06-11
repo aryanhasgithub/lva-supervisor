@@ -1,0 +1,46 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Local wheels
+wheels/**/*.whl
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+coverage.xml
+
+# dotenv
+.env
+
+# virtualenv
+venv/
+ENV/
+.venv/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+
+
+# Git
+.git
+.github
+
+
+# Docs
+*.md
+docs/

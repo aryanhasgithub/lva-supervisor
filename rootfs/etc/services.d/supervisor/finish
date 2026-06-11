@@ -1,0 +1,11 @@
+#!/usr/bin/env bashio
+# ==============================================================================
+# Take down the S6 supervision tree when lva-supervisor fails
+# ==============================================================================
+
+if [[ "$1" -ne 100 ]] && [[ "$1" -ne 256 ]]; then
+  bashio::log.warning "Halt lva-supervisor"
+  /run/s6/basedir/bin/halt
+fi
+
+bashio::log.info "lva-supervisor restart after closing"
