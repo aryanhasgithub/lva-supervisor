@@ -38,7 +38,6 @@ ENV/
 
 # Git
 .git
-.github
 
 
 # Docs
