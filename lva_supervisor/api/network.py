@@ -1,10 +1,4 @@
-"""Network API routes.
-
-GET  /network/info              → IP, interface, MAC, connection type
-GET  /network/interfaces        → list all network interfaces
-POST /network/hostname          → set system hostname
-POST /network/ip                → set static IP or switch to DHCP
-"""
+"""Network API routes."""
 
 import logging
 

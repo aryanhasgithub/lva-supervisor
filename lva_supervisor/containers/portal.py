@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from aiodocker.exceptions import DockerError as AioDockerError
 
-from ..const import CONTAINER_PORTAL, DOCKER_NETWORK, IMAGE_PORTAL
+from ..const import CONTAINER_PORTAL, IMAGE_PORTAL
 from ..docker.interface import DockerInterface
 from ..exceptions import DockerError
 from .base import ContainerBase
@@ -36,20 +36,13 @@ class DockerPortal(DockerInterface):
         """Create and start the lva-portal container."""
         _LOGGER.info("[%s] Creating container", self.name)
         config: dict[str, object] = {
-            "Image": self.image,
-            "ExposedPorts": {
-                "8000/tcp": {},
-            },
+            "Image": self.image,  
             "HostConfig": {
-                "NetworkMode": DOCKER_NETWORK,
-                "PortBindings": {
-                    "8000/tcp": [{"HostIp": "0.0.0.0", "HostPort": "8000"}],
-                },
+                "NetworkMode": "host",
                 "Binds": [
-                    "/run/lva:/run/lva:rw",
+                    "/run/lva/supervisor.sock:/run/lva/supervisor.sock:rw",
                     "/etc/lva:/etc/lva:rw",
                 ],
-                "RestartPolicy": {"Name": "unless-stopped"},
             },
         }
         try:
