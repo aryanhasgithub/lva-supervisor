@@ -41,11 +41,7 @@ async def run_supervisor() -> int:
         loop.add_signal_handler(sig, _handle_signal)
 
     # Setup all components
-    try:
-        await coresys.setup()
-    except Exception as err:  # pylint: disable=broad-exception-caught
-        _LOGGER.critical("CoreSys setup failed: %s", err)
-        return 1
+    
 
     runner = web.AppRunner(app, handle_signals=False)
     await runner.setup()
@@ -60,6 +56,11 @@ async def run_supervisor() -> int:
     await site.start()
     _LOGGER.info("Supervisor API listening on %s", SUPERVISOR_SOCKET)
 
+    try:
+        await coresys.setup()
+    except Exception as err:  # pylint: disable=broad-exception-caught
+        _LOGGER.critical("CoreSys setup failed: %s", err)
+        return 1
     # =========================================================================
     # STARTUP MARKER LOGIC
     # =========================================================================
