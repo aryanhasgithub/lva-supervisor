@@ -36,7 +36,7 @@ class DockerPortal(DockerInterface):
         """Create and start the lva-portal container."""
         _LOGGER.info("[%s] Creating container", self.name)
         config: dict[str, object] = {
-            "Image": self.image,  
+            "Image": self.image,
             "HostConfig": {
                 "NetworkMode": "host",
                 "Binds": [
