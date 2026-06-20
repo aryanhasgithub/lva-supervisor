@@ -9,7 +9,7 @@ import aiohttp
 from .base import ContainerBase
 from ..docker.interface import DockerInterface
 from ..exceptions import DockerPullError
-from ..const import IMAGE_SUPERVISOR
+from ..const import CONTAINER_SUPERVISOR ,IMAGE_SUPERVISOR
 
 # Pull straight from your shared helpers (using your exact folder spelling)
 from ..utils.updates import fetch_manifest, get_local_version, is_update_available
@@ -27,7 +27,7 @@ class SupervisorDockerWrapper(DockerInterface):
 
     @property
     def name(self) -> str:
-        return "hassio_supervisor"
+        return CONTAINER_SUPERVISOR
 
     @property
     def image(self) -> str:
