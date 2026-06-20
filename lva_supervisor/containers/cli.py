@@ -41,8 +41,6 @@ class DockerCli(DockerInterface):
 
         config: dict[str, object] = {
             "Image": self.image,
-            "Tty": True,
-            "OpenStdin": True,
             "HostConfig": {
                 # Host network mode matches the other lva-* containers,
                 # and lets the CLI reach the supervisor socket and any
