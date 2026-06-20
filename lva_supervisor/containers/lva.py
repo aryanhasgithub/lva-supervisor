@@ -77,7 +77,6 @@ class DockerLVA(DockerInterface):
                     "/etc/lva:/etc/lva:ro",
                     # Time and timezone
                     "/etc/localtime:/etc/localtime:ro",
-                    "/etc/timezone:/etc/timezone:ro",
                     # Named volumes
                     "lva_wakeword_data:/app/local",
                     "lva_wakeword_custom:/app/wakewords/custom",
