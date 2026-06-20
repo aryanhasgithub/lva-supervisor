@@ -169,7 +169,16 @@ class NetworkManager:
         proxy = self._bus.get_proxy_object(DBUS_NAME, path, introspection)  # type: ignore
         ip4_iface: IP4ConfigInterface = proxy.get_interface(IFACE_IP4)  # type: ignore
 
-        addresses = await ip4_iface.get_address_data()
+        raw_addresses = await ip4_iface.get_address_data()
+        addresses: list[dict[str, Any]] = []
+        for entry in raw_addresses:
+            addresses.append(
+                {
+                    key: (value.value if hasattr(value, "value") else value)
+                    for key, value in entry.items()
+                }
+            )
+
         gateway = await ip4_iface.get_gateway()
 
         raw_ns_data = await ip4_iface.get_nameserver_data()
