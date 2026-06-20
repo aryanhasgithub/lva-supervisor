@@ -16,6 +16,7 @@ from .const import (
     CONTAINER_AUDIO,
     CONTAINER_LVA,
     CONTAINER_PORTAL,
+    CONTAINER_CLI,
     CONTAINER_SUPERVISOR,
     CONTAINER_START_ORDER,
 )
@@ -24,6 +25,7 @@ from .containers.supervisor import Supervisor
 from .containers.audio import Audio
 from .containers.lva import LVA
 from .containers.portal import Portal
+from .containers.cli import Cli
 from .containers.base import ContainerBase
 from .dbus.logind import Logind
 from .dbus.hostname import Hostname
@@ -50,6 +52,7 @@ class CoreSys:
             CONTAINER_AUDIO: Audio(self),
             CONTAINER_LVA: LVA(self),
             CONTAINER_PORTAL: Portal(self),
+            CONTAINER_CLI: Cli(self),
             CONTAINER_SUPERVISOR: self._supervisor_container,
         }
 

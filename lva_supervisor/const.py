@@ -31,10 +31,11 @@ LVA_VOLUMES = [
 CONTAINER_LVA = "lva"
 CONTAINER_AUDIO = "lva-audio"
 CONTAINER_PORTAL = "lva-portal"
+CONTAINER_CLI = "lva-cli"
 CONTAINER_SUPERVISOR = "lva-supervisor"
 
-MANAGED_CONTAINERS = [CONTAINER_AUDIO, CONTAINER_LVA, CONTAINER_PORTAL]
-CONTAINER_START_ORDER = [CONTAINER_AUDIO, CONTAINER_LVA, CONTAINER_PORTAL]
+MANAGED_CONTAINERS = [CONTAINER_AUDIO, CONTAINER_LVA, CONTAINER_PORTAL, CONTAINER_CLI]
+CONTAINER_START_ORDER = [CONTAINER_CLI, CONTAINER_AUDIO, CONTAINER_LVA, CONTAINER_PORTAL]
 
 # =============================================================================
 # Container images
@@ -43,6 +44,7 @@ GHCR_BASE = "ghcr.io/aryanhasgithub"
 IMAGE_LVA = "ghcr.io/ohf-voice/linux-voice-assistant"
 IMAGE_AUDIO = f"{GHCR_BASE}/lva-audio"
 IMAGE_PORTAL = f"{GHCR_BASE}/lva-portal"
+IMAGE_CLI = f"{GHCR_BASE}/lva-cli"
 IMAGE_SUPERVISOR = f"{GHCR_BASE}/lva-supervisor"
 VERSION_MANIFEST_URL = (
     "https://raw.githubusercontent.com/aryanhasgithub/lva-version/main/stable.json"
