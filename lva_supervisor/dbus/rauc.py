@@ -160,3 +160,12 @@ class RAUC:
             return await self._iface.get_operation()
         except Exception as err:
             raise DBusMethodError(f"RAUC GetOperation failed: {err}") from err
+
+    async def mark_good(self, slot: str = "booted") -> tuple[str, str]:
+        """Mark a slot as good, confirming this boot succeeded
+        """
+        self._check_connected()
+        try:
+            return await self._iface.call_mark_good(slot)
+        except Exception as err:
+            raise DBusMethodError(f"RAUC MarkGood failed: {err}") from err

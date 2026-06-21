@@ -136,6 +136,15 @@ class CoreSys:
         await self._start_containers()
         _LOGGER.info("Starting background auto-update tracking...")
 
+        # Containers have been attempted in order with no fatal exception
+        # escaping _start_containers — this is the real "boot succeeded"
+        # signal. Tell RAUC so it doesn't roll back a working slot.
+        try:
+            await self._rauc.mark_good()
+            _LOGGER.info("RAUC: current boot slot marked good")
+        except Exception as err:  # pylint: disable=broad-exception-caught
+            _LOGGER.warning("RAUC mark_good failed: %s", err)
+
         supervisor_container = self.supervisor
 
         # This executes the infinite 2-hour sleep-and-poll loop asynchronously
