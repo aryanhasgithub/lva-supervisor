@@ -138,15 +138,12 @@ class RAUC:
             raise DBusMethodError(f"RAUC GetSlotStatus failed: {err}") from err
 
     async def get_booted_slot(self) -> str:
-        """Return the name of the currently booted slot (e.g. 'rootfs.0').
-
-        The RAUC D-Bus property is 'BootSlot'.
-        dbus-fast converts CamelCase properties to snake_case getters, so
-        'BootSlot' → get_boot_slot().
-        """
+        """Return the name of the currently booted RAUC slot (A or B)."""
         self._check_connected()
         try:
-            return await self._iface.get_boot_slot()
+            result = await self._iface.get_boot_slot()
+            # dbus-fast may return a Variant — unwrap it
+            return result.value if hasattr(result, "value") else result
         except Exception as err:
             raise DBusMethodError(f"RAUC GetBootSlot failed: {err}") from err
 
@@ -162,10 +159,9 @@ class RAUC:
             raise DBusMethodError(f"RAUC GetOperation failed: {err}") from err
 
     async def mark_good(self, slot: str = "booted") -> tuple[str, str]:
-        """Mark a slot as good, confirming this boot succeeded
-        """
+        """Mark a slot as good, preventing automatic rollback on next boot."""
         self._check_connected()
         try:
-            return await self._iface.call_mark_good(slot)
+            return await self._iface.call_mark("good", slot)
         except Exception as err:
             raise DBusMethodError(f"RAUC MarkGood failed: {err}") from err
