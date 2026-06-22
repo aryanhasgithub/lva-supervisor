@@ -15,6 +15,15 @@ SUPERVISOR_SOCKET = Path("/run/lva/supervisor.sock")
 SUPERVISOR_DATA = Path("/data")
 STARTUP_MARKER = Path("/data/supervisor-started")
 
+# First-boot pull progress. FIRSTBOOT_MARKER existing is what gates whether
+# the supervisor's bare HTML page is served at all — created when load()
+# starts the first-boot install sequence, removed once _start_containers()
+# finishes. Only one container is ever pulling at a time (containers start
+# sequentially in CONTAINER_START_ORDER), so a single file is enough —
+# written as "<container_name>-<percent>", e.g. "lva-42".
+FIRSTBOOT_MARKER = Path("/data/firstboot-in-progress")
+FIRSTBOOT_PROGRESS_FILE = Path("/data/firstboot-progress")
+
 # =============================================================================
 # Volumes
 # =============================================================================

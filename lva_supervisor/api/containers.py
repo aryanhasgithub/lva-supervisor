@@ -155,16 +155,13 @@ async def container_state(request: web.Request) -> web.Response:
 async def update_stream(request: web.Request) -> web.StreamResponse:
     """SSE stream for a container image update.
 
-    Calls container.update(progress=...) and streams each step to the client:
-      - Pulling new image for <name>...
-      - Pull complete.
-      - Stopping <name>...
-      - Removing old container for <name>...
-      - Old container removed.
-      - Starting <name> with new image...
-      - <name> updated and started successfully.
+    Calls container.update(progress=...) and streams each step to the
+    client as a JSON dict, e.g.:
+      {"status": "Pulling new image for lva...", "type": "log"}
+      {"status": "Downloading", "pull_percent": 42, "type": "log"}
+      {"status": "lva updated and started successfully.", "type": "success"}
 
-    On error, emits { type: "error", message: "..." } and closes.
+    On error, emits {"type": "error", "status": "..."} and closes.
     """
     coresys = _get_coresys(request)
     name = request.match_info["name"]
@@ -181,24 +178,22 @@ async def update_stream(request: web.Request) -> web.StreamResponse:
     )
     await resp.prepare(request)
 
-    def _sse(event_type: str, message: str) -> bytes:
-        return (
-            f"data: {json.dumps({'type': event_type, 'message': message})}\n\n".encode()
-        )
+    def _sse(event: dict) -> bytes:
+        return f"data: {json.dumps(event)}\n\n".encode()
 
     # Queue bridges the async callback from ContainerBase.update() to this
-    # streaming response — progress() puts messages in, the loop below drains them.
-    queue: asyncio.Queue[str | None] = asyncio.Queue()
+    # streaming response — progress() puts dicts in, the loop below drains them.
+    queue: asyncio.Queue[dict | None] = asyncio.Queue()
 
-    async def progress(msg: str) -> None:
-        await queue.put(msg)
+    async def progress(event: dict) -> None:
+        await queue.put(event)
 
     async def _run_update() -> None:
         try:
             container = coresys.containers[name]
             await container.update(progress=progress)
         except Exception as err:  # pylint: disable=broad-exception-caught
-            await queue.put(f"__error__:{err}")
+            await queue.put({"__error__": str(err)})
         finally:
             await queue.put(None)  # sentinel — tells the drain loop to stop
 
@@ -206,16 +201,19 @@ async def update_stream(request: web.Request) -> web.StreamResponse:
 
     try:
         while True:
-            msg = await queue.get()
-            if msg is None:
+            event = await queue.get()
+            if event is None:
                 # Update finished — send final success marker and close
-                await resp.write(_sse("success", f"{name} update complete."))
+                await resp.write(
+                    _sse({"type": "success", "status": f"{name} update complete."})
+                )
                 break
-            if msg and msg.startswith("__error__:"):
-                error_text = msg[len("__error__:") :]
-                await resp.write(_sse("error", error_text))
+            if "__error__" in event:
+                await resp.write(
+                    _sse({"type": "error", "status": event["__error__"]})
+                )
                 break
-            await resp.write(_sse("log", msg))
+            await resp.write(_sse({**event, "type": "log"}))
     finally:
         update_task.cancel()
         await resp.write_eof()

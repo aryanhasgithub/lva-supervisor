@@ -133,12 +133,22 @@ class CoreSys:
         except Exception as err:  # pylint: disable=broad-exception-caught
             _LOGGER.warning("D-Bus connect failed: %s", err)
 
+        from .const import FIRSTBOOT_MARKER
+
+        FIRSTBOOT_MARKER.parent.mkdir(parents=True, exist_ok=True)
+        FIRSTBOOT_MARKER.touch()
+
         await self._start_containers()
         _LOGGER.info("Starting background auto-update tracking...")
 
         # Containers have been attempted in order with no fatal exception
         # escaping _start_containers — this is the real "boot succeeded"
-        # signal. Tell RAUC so it doesn't roll back a working slot.
+        # signal. Tell RAUC so it doesn't roll back a working slot, and stop
+        # serving the bare first-boot page now that lva/lva-portal should
+        # be up.
+        if FIRSTBOOT_MARKER.exists():
+            FIRSTBOOT_MARKER.unlink()
+
         try:
             await self._rauc.mark_good()
             _LOGGER.info("RAUC: current boot slot marked good")

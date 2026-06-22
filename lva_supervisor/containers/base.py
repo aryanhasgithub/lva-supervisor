@@ -18,9 +18,10 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 # Type alias for an optional async progress reporter.
-# Callers (e.g. the SSE route) pass an async callable that receives a plain
-# English status string and yields it to the client.
-ProgressCallback = Callable[[str], Awaitable[None]] | None
+# Callers (e.g. SSE routes, the first-boot marker-file writer) pass an async
+# callable that receives a dict, e.g. {"pull_percent": 42, "status": "..."}
+# or {"status": "Stopping..."} for non-pull steps.
+ProgressCallback = Callable[[dict], Awaitable[None]] | None
 
 
 class ContainerBase(ABC):
@@ -67,39 +68,40 @@ class ContainerBase(ABC):
 
         Mirrors HA's PluginBase.load():
           1. Try to attach to existing container.
-          2. If not found → install + run.
-          3. If image mismatch → remove + install + run.
+          2. If not found → pull + run.
+          3. If image mismatch → remove + pull + run.
           4. If not running → start.
+
+        On the first-boot path, pull progress is written to a per-container
+        file under FIRSTBOOT_PROGRESS_DIR so the supervisor's bare HTML page
+        can poll it before lva-portal exists to show this itself.
         """
         _LOGGER.info("[%s] Loading container", self.name)
+
+        async def _write_progress(event: dict) -> None:
+            from ..const import FIRSTBOOT_PROGRESS_FILE
+
+            pct = event.get("pull_percent", 0)
+            FIRSTBOOT_PROGRESS_FILE.write_text(f"{self.name}-{pct}")
 
         try:
             attached = await self.instance.attach()
         except DockerError:
             _LOGGER.warning("[%s] Reinstalling due to image mismatch", self.name)
             await self.instance.remove()
-            await self.install()
+            await self.instance.pull(progress=_write_progress)
             await self.instance.run()
             return
 
         if not attached:
-            _LOGGER.info("[%s] First boot — installing container", self.name)
-            await self.install()
+            _LOGGER.info("[%s] First boot — pulling image", self.name)
+            await self.instance.pull(progress=_write_progress)
             await self.instance.run()
             return
 
         if not await self.instance.is_running():
             _LOGGER.info("[%s] Container exists but not running — starting", self.name)
             await self.start()
-
-    async def install(self) -> None:
-        """Pull the container image."""
-        _LOGGER.info("[%s] Pulling image %s", self.name, self.image)
-        try:
-            await self.instance.pull()
-        except DockerPullError as err:
-            _LOGGER.error("[%s] Image pull failed: %s", self.name, err)
-            raise
 
     async def update(self, progress: ProgressCallback = None) -> None:
         """Pull latest image then safely replace the running container.
@@ -112,20 +114,22 @@ class ContainerBase(ABC):
           4. Create and start the new container from the freshly pulled image.
 
         Args:
-            progress: optional async callable receiving a human-readable status
-                      string. Used by SSE update routes to stream progress.
+            progress: optional async callable receiving a dict, e.g.
+                      {"pull_percent": 42, "status": "Downloading"} during
+                      the pull, or {"status": "Stopping..."} for other
+                      steps. Used by SSE update routes to stream progress.
         """
 
-        async def _report(msg: str) -> None:
-            _LOGGER.info("[%s] %s", self.name, msg)
+        async def _report(status: str, **extra) -> None:
+            _LOGGER.info("[%s] %s", self.name, status)
             if progress is not None:
-                await progress(msg)
+                await progress({"status": status, **extra})
 
         self._updating = True
         try:
             await _report(f"Pulling new image for {self.name}...")
             try:
-                await self.instance.pull()
+                await self.instance.pull(progress=progress)
             except DockerPullError as err:
                 await _report(f"Pull failed: {err}")
                 raise

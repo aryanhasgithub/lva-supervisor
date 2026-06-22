@@ -176,10 +176,46 @@ class DockerInterface(ABC):
         with suppress(AioDockerError):
             await container.delete(force=True, v=True)
 
-    async def pull(self) -> None:
-        """Pull the image."""
+    async def pull(
+        self, progress: "Callable[[dict], Coroutine] | None" = None
+    ) -> None:
+        """Pull the image.
+
+        Args:
+            progress: optional async callable receiving a dict, e.g.
+                      {"pull_percent": 42, "status": "Downloading"}.
+                      If omitted, behaves as a plain non-streaming pull.
+        """
         try:
-            await self.coresys.docker.images.pull(self.image, stream=False)
+            if progress is None:
+                await self.coresys.docker.images.pull(self.image, stream=False)
+                _LOGGER.info("[%s] Image pulled successfully", self.name)
+                return
+
+            layers: dict[str, dict[str, int]] = {}
+
+            async for event in self.coresys.docker.images.pull(
+                self.image, stream=True
+            ):
+                layer_id = event.get("id")
+                detail = event.get("progressDetail") or {}
+                current = detail.get("current")
+                total = detail.get("total")
+
+                if layer_id and total:
+                    layers[layer_id] = {"current": current or 0, "total": total}
+
+                done_bytes = sum(layer["current"] for layer in layers.values())
+                total_bytes = sum(layer["total"] for layer in layers.values())
+                pct = int(done_bytes / total_bytes * 100) if total_bytes else 0
+
+                await progress(
+                    {
+                        "pull_percent": pct,
+                        "status": event.get("status", ""),
+                    }
+                )
+
             _LOGGER.info("[%s] Image pulled successfully", self.name)
         except AioDockerError as err:
             raise DockerPullError(

@@ -12,7 +12,14 @@ from .api.system import setup_routes as setup_system_routes
 from .api.audio import setup_routes as setup_audio_routes
 from .api.updates import setup_routes as setup_update_routes
 from .api.network import setup_routes as setup_network_routes
-from .const import SUPERVISOR_SOCKET, STARTUP_MARKER
+from .const import (
+    SUPERVISOR_SOCKET,
+    STARTUP_MARKER,
+    FIRSTBOOT_MARKER,
+    FIRSTBOOT_PROGRESS_FILE,
+)
+from .temppage import _FIRSTBOOT_HTML
+FIRSTBOOT_PORT = 8080
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -55,6 +62,10 @@ async def run_supervisor() -> int:
     site = web.UnixSite(runner, path=str(SUPERVISOR_SOCKET))
     await site.start()
     _LOGGER.info("Supervisor API listening on %s", SUPERVISOR_SOCKET)
+
+    tcp_site = web.TCPSite(runner, host="0.0.0.0", port=FIRSTBOOT_PORT)
+    await tcp_site.start()
+    _LOGGER.info("First-boot page listening on :%s", FIRSTBOOT_PORT)
 
     try:
         await coresys.setup()
@@ -99,4 +110,45 @@ def _build_app(coresys: CoreSys) -> web.Application:
     setup_update_routes(app)
     setup_network_routes(app)
 
+    app.router.add_get("/firstboot", _firstboot_page)
+    app.router.add_get("/firstboot/status", _firstboot_status)
+
     return app
+
+
+async def _firstboot_page(request: web.Request) -> web.Response:
+    """Bare first-boot page — only served while FIRSTBOOT_MARKER exists.
+
+    Once coresys.setup() has started all managed containers, the marker
+    is removed and this just tells the browser to go to the real portal.
+    """
+    if not FIRSTBOOT_MARKER.exists():
+        return web.Response(
+            text='<meta http-equiv="refresh" content="0; url=http://'
+            f'{request.host.split(":")[0]}:8000">',
+            content_type="text/html",
+        )
+    return web.Response(text=_FIRSTBOOT_HTML, content_type="text/html")
+
+
+async def _firstboot_status(request: web.Request) -> web.Response:
+    """Plain JSON snapshot of the current pull, read from a single file.
+
+    The file content is "<container_name>-<percent>", written by whichever
+    container's load() is currently pulling — only one pulls at a time
+    since CONTAINER_START_ORDER runs sequentially.
+    """
+    name, pct = None, 0
+    if FIRSTBOOT_PROGRESS_FILE.exists():
+        try:
+            raw = FIRSTBOOT_PROGRESS_FILE.read_text().strip()
+            name, pct_str = raw.rsplit("-", 1)
+            pct = int(pct_str)
+        except (ValueError, OSError):
+            pass
+
+    return web.json_response(
+        {"in_progress": FIRSTBOOT_MARKER.exists(), "name": name, "pull_percent": pct}
+    )
+
+
