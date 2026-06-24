@@ -41,7 +41,7 @@ class DockerPortal(DockerInterface):
                 "NetworkMode": "host",
                 "Binds": [
                     "/run/lva/supervisor.sock:/run/lva/supervisor.sock:rw",
-                    "/etc/lva/master.env:/etc/lva/master.env:rw",
+                    "/mnt/data/lva-portal/master.env:/etc/lva/master.env:rw",
                 ],
             },
         }
