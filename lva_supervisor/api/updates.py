@@ -147,17 +147,12 @@ async def check_os_update(request: web.Request) -> web.Response:
             "{board}", MACHINE
         )
 
-    # Read current version from RAUC booted slot
+    # Read current OS version from hostname1 D-Bus (OperatingSystemPrettyName)
     current_version: str | None = None
     try:
-        booted = await coresys.rauc.get_booted_slot()
-        slots = await coresys.rauc.get_slot_status()
-        current_version = next(
-            (s["version"] for s in slots if s["name"] == booted and s["version"]),
-            None,
-        )
+        current_version = await coresys.hostname.get_os_version()
     except Exception as err:  # pylint: disable=broad-exception-caught
-        _LOGGER.warning("Could not read RAUC booted slot version: %s", err)
+        _LOGGER.warning("Could not read OS version from hostname1: %s", err)
 
     return web.json_response(
         {
