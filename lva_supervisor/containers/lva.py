@@ -75,6 +75,7 @@ class DockerLVA(DockerInterface):
                     "/run/lva/audio:/run/lva/audio:ro",
                     # Config — wrapper reads this on every start
                     "/etc/lva:/etc/lva:ro",
+                    "/mnt/data/lva-portal/master.env:/mnt/data/lva-portal/master.env:ro",
                     # Time and timezone
                     "/etc/localtime:/etc/localtime:ro",
                     # Named volumes
