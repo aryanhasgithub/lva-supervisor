@@ -21,7 +21,7 @@ STARTUP_MARKER = Path("/data/supervisor-started")
 # finishes. Only one container is ever pulling at a time (containers start
 # sequentially in CONTAINER_START_ORDER), so a single file is enough —
 # written as "<container_name>-<percent>", e.g. "lva-42".
-FIRSTBOOT_MARKER = Path("/data/firstboot-in-progress")
+FIRSTBOOT_DONE = Path("/data/firstboot-done")
 FIRSTBOOT_PROGRESS_FILE = Path("/data/firstboot-progress")
 
 # =============================================================================

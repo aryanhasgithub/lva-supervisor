@@ -15,7 +15,7 @@ from .api.network import setup_routes as setup_network_routes
 from .const import (
     SUPERVISOR_SOCKET,
     STARTUP_MARKER,
-    FIRSTBOOT_MARKER,
+    FIRSTBOOT_DONE,
     FIRSTBOOT_PROGRESS_FILE,
 )
 from .temppage import _FIRSTBOOT_HTML
@@ -64,7 +64,7 @@ async def run_supervisor() -> int:
     _LOGGER.info("Supervisor API listening on %s", SUPERVISOR_SOCKET)
 
     tcp_site = None
-    if FIRSTBOOT_MARKER.exists():
+    if not FIRSTBOOT_DONE.exists():
         tcp_site = web.TCPSite(runner, host="0.0.0.0", port=FIRSTBOOT_PORT)
         await tcp_site.start()
         _LOGGER.info("First-boot page listening on :%s", FIRSTBOOT_PORT)
@@ -123,12 +123,12 @@ def _build_app(coresys: CoreSys) -> web.Application:
 
 
 async def _firstboot_page(request: web.Request) -> web.Response:
-    """Bare first-boot page — only served while FIRSTBOOT_MARKER exists.
+    """Bare first-boot page — only served while FIRSTBOOT_DONE does not exist.
 
-    Once coresys.setup() has started all managed containers, the marker
-    is removed and this just tells the browser to go to the real portal.
+    Once coresys.setup() has started all managed containers, FIRSTBOOT_DONE
+    is created and this just tells the browser to go to the real portal.
     """
-    if not FIRSTBOOT_MARKER.exists():
+    if FIRSTBOOT_DONE.exists():
         return web.Response(
             text='<meta http-equiv="refresh" content="0; url=http://'
             f'{request.host.split(":")[0]}:8000">',
@@ -154,5 +154,5 @@ async def _firstboot_status(request: web.Request) -> web.Response:
             pass
 
     return web.json_response(
-        {"in_progress": FIRSTBOOT_MARKER.exists(), "name": name, "pull_percent": pct}
+        {"in_progress": not FIRSTBOOT_DONE.exists(), "name": name, "pull_percent": pct}
     )

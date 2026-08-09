@@ -19,7 +19,7 @@ from .const import (
     CONTAINER_CLI,
     CONTAINER_SUPERVISOR,
     CONTAINER_START_ORDER,
-    FIRSTBOOT_MARKER,
+    FIRSTBOOT_DONE,
 )
 from .docker.manager import DockerManager
 from .containers.supervisor import Supervisor
@@ -139,11 +139,11 @@ class CoreSys:
 
         # Containers have been attempted in order with no fatal exception
         # escaping _start_containers — this is the real "boot succeeded"
-        # signal. Tell RAUC so it doesn't roll back a working slot, and stop
-        # serving the bare first-boot page now that lva/lva-portal should
-        # be up.
-        if FIRSTBOOT_MARKER.exists():
-            FIRSTBOOT_MARKER.unlink()
+        # signal. Tell RAUC so it doesn't roll back a working slot, and mark
+        # first boot as done so the bare first-boot page never opens again.
+        if not FIRSTBOOT_DONE.exists():
+            FIRSTBOOT_DONE.parent.mkdir(parents=True, exist_ok=True)
+            FIRSTBOOT_DONE.touch()
 
         try:
             await self._rauc.mark_good()
