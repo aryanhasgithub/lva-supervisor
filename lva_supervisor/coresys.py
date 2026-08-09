@@ -19,6 +19,7 @@ from .const import (
     CONTAINER_CLI,
     CONTAINER_SUPERVISOR,
     CONTAINER_START_ORDER,
+    FIRSTBOOT_MARKER,
 )
 from .docker.manager import DockerManager
 from .containers.supervisor import Supervisor
@@ -132,11 +133,6 @@ class CoreSys:
             await self._connect_dbus_interfaces()
         except Exception as err:  # pylint: disable=broad-exception-caught
             _LOGGER.warning("D-Bus connect failed: %s", err)
-
-        from .const import FIRSTBOOT_MARKER
-
-        FIRSTBOOT_MARKER.parent.mkdir(parents=True, exist_ok=True)
-        FIRSTBOOT_MARKER.touch()
 
         await self._start_containers()
         _LOGGER.info("Starting background auto-update tracking...")

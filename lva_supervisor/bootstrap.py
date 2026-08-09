@@ -63,9 +63,11 @@ async def run_supervisor() -> int:
     await site.start()
     _LOGGER.info("Supervisor API listening on %s", SUPERVISOR_SOCKET)
 
-    tcp_site = web.TCPSite(runner, host="0.0.0.0", port=FIRSTBOOT_PORT)
-    await tcp_site.start()
-    _LOGGER.info("First-boot page listening on :%s", FIRSTBOOT_PORT)
+    tcp_site = None
+    if FIRSTBOOT_MARKER.exists():
+        tcp_site = web.TCPSite(runner, host="0.0.0.0", port=FIRSTBOOT_PORT)
+        await tcp_site.start()
+        _LOGGER.info("First-boot page listening on :%s", FIRSTBOOT_PORT)
 
     try:
         await coresys.setup()
@@ -83,6 +85,10 @@ async def run_supervisor() -> int:
         except Exception as err:  # pylint: disable=broad-exception-caught
             _LOGGER.warning("Could not remove supervisor startup marker file: %s", err)
     # =========================================================================
+
+    if tcp_site is not None:
+        await tcp_site.stop()
+        _LOGGER.info("First-boot page closed on :%s", FIRSTBOOT_PORT)
 
     # Block until shutdown signal or internal exit request
     await stop_event.wait()
@@ -150,5 +156,3 @@ async def _firstboot_status(request: web.Request) -> web.Response:
     return web.json_response(
         {"in_progress": FIRSTBOOT_MARKER.exists(), "name": name, "pull_percent": pct}
     )
-
-
