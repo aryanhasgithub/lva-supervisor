@@ -123,6 +123,11 @@ class CoreSys:
         """Connect all components."""
         _LOGGER.info("CoreSys setting up")
 
+        # Read this before anything below has a chance to create the file —
+        # it tells us whether this run IS the first boot, which determines
+        # whether we bounce the portal after container startup.
+        is_first_boot = not FIRSTBOOT_DONE.exists()
+
         await self._docker.connect()
         _LOGGER.info("Docker connected")
 
@@ -135,13 +140,37 @@ class CoreSys:
             _LOGGER.warning("D-Bus connect failed: %s", err)
 
         await self._start_containers()
+
+        # Portal holds state/connections tied to the previous supervisor
+        # process (sockets, in-memory session data, etc). load() alone
+        # won't touch it if it's already running, so force a restart here
+        # on every supervisor startup EXCEPT first boot — on first boot
+        # _start_containers() just pulled and ran the portal fresh, so
+        # restarting it again immediately would be redundant.
+        if is_first_boot:
+            _LOGGER.info("First boot — skipping post-startup portal restart")
+        else:
+            _LOGGER.info(
+                "Restarting portal for a clean reconnect to this supervisor instance"
+            )
+            try:
+                await self._containers[CONTAINER_PORTAL].restart()
+                if not await self._containers[CONTAINER_PORTAL].wait_until_running(
+                    timeout=30
+                ):
+                    _LOGGER.warning(
+                        "Portal did not come back up within timeout after restart"
+                    )
+            except Exception as err:  # pylint: disable=broad-exception-caught
+                _LOGGER.warning("Portal restart during setup failed: %s", err)
+
         _LOGGER.info("Starting background auto-update tracking...")
 
         # Containers have been attempted in order with no fatal exception
         # escaping _start_containers — this is the real "boot succeeded"
         # signal. Tell RAUC so it doesn't roll back a working slot, and mark
         # first boot as done so the bare first-boot page never opens again.
-        if not FIRSTBOOT_DONE.exists():
+        if is_first_boot:
             FIRSTBOOT_DONE.parent.mkdir(parents=True, exist_ok=True)
             FIRSTBOOT_DONE.touch()
 
