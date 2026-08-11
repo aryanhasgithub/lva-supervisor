@@ -51,7 +51,10 @@ class Hostname:
         """Get the current system hostname."""
         self._check_connected()
         try:
-            return await self._iface.get_hostname()
+            variant = await self._props_iface.call_get(
+                DBUS_IFACE, "Hostname"
+            )
+            return variant.value
         except Exception as err:
             raise DBusMethodError(f"GetHostname failed: {err}") from err
 

@@ -24,6 +24,7 @@ _LOGGER = logging.getLogger(__name__)
 DBUS_NAME = "org.freedesktop.NetworkManager"
 DBUS_OBJECT = "/org/freedesktop/NetworkManager"
 DBUS_IFACE_NM = "org.freedesktop.NetworkManager"
+DBUS_PROPERTIES_IFACE = "org.freedesktop.DBus.Properties"
 
 IFACE_DEVICE          = "org.freedesktop.NetworkManager.Device"
 IFACE_DEVICE_WIRELESS = "org.freedesktop.NetworkManager.Device.Wireless"
@@ -141,12 +142,12 @@ class NetworkManager:
         """Read device properties and current IP config for one device."""
         introspection = await self._bus.introspect(DBUS_NAME, path)  # type: ignore
         proxy = self._bus.get_proxy_object(DBUS_NAME, path, introspection)  # type: ignore
-        dev_iface: NetworkDeviceInterface = proxy.get_interface(IFACE_DEVICE)  # type: ignore
+        props_iface = proxy.get_interface(DBUS_PROPERTIES_IFACE) # type: ignore
 
-        iface_name = await dev_iface.get_interface()
-        state = await dev_iface.get_state()
-        dev_type = await dev_iface.get_device_type()
-        ip4_path = await dev_iface.get_ip4_config()
+        iface_name = (await props_iface.call_get(IFACE_DEVICE, "Interface")).value # type: ignore
+        state      = (await props_iface.call_get(IFACE_DEVICE, "State")).value # type: ignore
+        dev_type   = (await props_iface.call_get(IFACE_DEVICE, "DeviceType")).value # type: ignore
+        ip4_path   = (await props_iface.call_get(IFACE_DEVICE, "Ip4Config")).value # type: ignore
 
         info: dict[str, Any] = {
             "interface": iface_name,
@@ -167,9 +168,10 @@ class NetworkManager:
         """Read IPv4 address info from an IP4Config object."""
         introspection = await self._bus.introspect(DBUS_NAME, path)  # type: ignore
         proxy = self._bus.get_proxy_object(DBUS_NAME, path, introspection)  # type: ignore
-        ip4_iface: IP4ConfigInterface = proxy.get_interface(IFACE_IP4)  # type: ignore
-
-        raw_addresses = await ip4_iface.get_address_data()
+        
+        props_iface = proxy.get_interface(DBUS_PROPERTIES_IFACE)  # type: ignore
+        
+        raw_addresses = (await props_iface.call_get(IFACE_IP4, "AddressData")).value # type: ignore
         addresses: list[dict[str, Any]] = []
         for entry in raw_addresses:
             addresses.append(
@@ -179,9 +181,9 @@ class NetworkManager:
                 }
             )
 
-        gateway = await ip4_iface.get_gateway()
+        gateway = (await props_iface.call_get(IFACE_IP4, "Gateway")).value # type: ignore
 
-        raw_ns_data = await ip4_iface.get_nameserver_data()
+        raw_ns_data = (await props_iface.call_get(IFACE_IP4, "NameserverData")).value # type: ignore
         dns: list[str] = []
         for entry in raw_ns_data:
             addr_variant = entry.get("address")
