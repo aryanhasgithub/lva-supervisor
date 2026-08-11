@@ -6,12 +6,13 @@ GET  /updates/versions       → current local versions of all components
 GET  /updates/os             → OS update info from lva-version manifest
 """
 
+import asyncio
 import logging
 
 import aiohttp
 from aiohttp import web
 
-from ..const import MANAGED_CONTAINERS
+from ..const import CONTAINER_SUPERVISOR, MANAGED_CONTAINERS
 from ..coresys import CoreSys
 from ..exceptions import DockerError
 from ..utils.updates import fetch_manifest, get_local_version, is_update_available
@@ -94,6 +95,54 @@ async def update_component(request: web.Request) -> web.Response:
     except DockerError as err:
         return _err_response(err, 500)
 
+@routes.post("/updates/supervisor/update")
+async def update_supervisor(request: web.Request) -> web.Response:
+    """Trigger a supervisor self-update.
+
+    Unlike the generic /updates/update route, this does NOT wait for
+    container.update() to return "successfully" — it can't. Supervisor.update()
+    pulls the new image and then calls exit_system(code=100), which tears the
+    process down so systemd/the host script can stop, remove, and recreate the
+    container from outside. The HTTP connection serving this request dies with
+    the process partway through.
+
+    So: kick off update() as a background task rather than awaiting it inline,
+    and return immediately once the pull has *started*. The UI should treat a
+    dropped connection after this call as the expected path, then poll
+    GET /updates/versions to confirm when the new version has actually landed.
+    """
+    coresys = _get_coresys(request)
+    supervisor = coresys.containers[CONTAINER_SUPERVISOR]
+
+    if supervisor.is_updating():
+        return _err_response(
+            RuntimeError("Supervisor update already in progress"), 409
+        )
+
+    async def _run_update() -> None:
+        try:
+            await supervisor.update()
+        except DockerError as err:
+            # We're very unlikely to still be alive to log this by the time
+            # exit_system() fires, but if the pull itself fails we never get
+            # that far, so this branch does get hit.
+            _LOGGER.error("[%s] Self-update failed: %s", CONTAINER_SUPERVISOR, err)
+
+    # Fire-and-forget: don't await this. Awaiting it inline means this handler
+    # (and its response) dies with the process before it can reply.
+    asyncio.create_task(_run_update())
+
+    return web.json_response(
+        {
+            "result": "started",
+            "message": (
+                "Supervisor update started. The connection will drop when "
+                "the update completes — this is expected. Poll "
+                "/updates/versions to confirm."
+            ),
+        },
+        status=202,
+    )
 
 @routes.get("/updates/versions")
 async def get_versions(request: web.Request) -> web.Response:

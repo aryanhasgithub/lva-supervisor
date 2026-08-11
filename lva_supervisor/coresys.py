@@ -151,12 +151,6 @@ class CoreSys:
         except Exception as err:  # pylint: disable=broad-exception-caught
             _LOGGER.warning("RAUC mark_good failed: %s", err)
 
-        supervisor_container = self.supervisor
-
-        # This executes the infinite 2-hour sleep-and-poll loop asynchronously
-        self._bg_updater_task = asyncio.create_task(
-            supervisor_container.start_background_updater()
-        )
         await self._watchdog.start()
 
         _LOGGER.info("CoreSys setup complete")
@@ -183,13 +177,6 @@ class CoreSys:
         _LOGGER.info("CoreSys tearing down")
 
         await self._watchdog.stop()
-
-        if self._bg_updater_task and not self._bg_updater_task.done():
-            self._bg_updater_task.cancel()
-            try:
-                await self._bg_updater_task
-            except asyncio.CancelledError:
-                pass
 
         self._logind.disconnect()
         self._hostname.disconnect()
