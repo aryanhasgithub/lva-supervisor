@@ -60,7 +60,7 @@ class Supervisor(ContainerBase):
                     if progress is not None:
                         await progress(event)
 
-                await self.instance.pull(progress=_pull_progress)
+                await self.instance.pull(progress=_pull_progress)#send pull implement later
             except DockerPullError as err:
                 await _report(f"Self-update download failed: {err}")
                 raise

@@ -54,7 +54,9 @@ class Hostname:
             variant = await self._props_iface.call_get(
                 DBUS_IFACE, "Hostname"
             )
+            _LOGGER.info("Current hostname: %s", variant.value)
             return variant.value
+
         except Exception as err:
             raise DBusMethodError(f"GetHostname failed: {err}") from err
 
