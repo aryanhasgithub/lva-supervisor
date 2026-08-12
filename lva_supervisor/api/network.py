@@ -58,6 +58,17 @@ async def network_interfaces(request: web.Request) -> web.Response:
     except DBusMethodError as err:
         return _err_response(err, 500)
 
+@routes.get("/network/hostname")
+async def get_hostname(request: web.Request) -> web.Response:
+    """Return the current system hostname."""
+    coresys = _get_coresys(request)
+    try:
+        hostname = await coresys.hostname.get_hostname()
+        return web.json_response({"hostname": hostname})
+    except DBusConnectionError as err:
+        return _err_response(err, 503)
+    except DBusMethodError as err:
+        return _err_response(err, 500)
 
 @routes.post("/network/hostname")
 async def set_hostname(request: web.Request) -> web.Response:
