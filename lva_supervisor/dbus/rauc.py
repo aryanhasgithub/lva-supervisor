@@ -15,7 +15,7 @@ _LOGGER = logging.getLogger(__name__)
 _DBUS_NAME = "de.pengutronix.rauc"
 _DBUS_OBJECT = "/"
 _DBUS_IFACE = "de.pengutronix.rauc.Installer"
-
+DBUS_PROPERTIES_IFACE = "org.freedesktop.DBus.Properties"
 
 class SignalResult:
 
@@ -37,6 +37,7 @@ class RAUC:
     def __init__(self) -> None:
         self._bus: MessageBus | None = None
         self._iface: Any = None
+        self._props_iface: Any = None
 
     async def connect(self, bus: MessageBus) -> None:
         """Load RAUC installer interface from shared bus."""
@@ -45,6 +46,7 @@ class RAUC:
             introspection = await bus.introspect(_DBUS_NAME, _DBUS_OBJECT)
             proxy = bus.get_proxy_object(_DBUS_NAME, _DBUS_OBJECT, introspection)
             self._iface = proxy.get_interface(_DBUS_IFACE)
+            self._props_iface = proxy.get_interface(DBUS_PROPERTIES_IFACE)
             _LOGGER.info("D-Bus RAUC interface loaded")
         except Exception as err:
             raise DBusConnectionError(
@@ -54,6 +56,7 @@ class RAUC:
     def disconnect(self) -> None:
         """Clear cached interface (bus is closed by coresys)."""
         self._iface = None
+        self._props_iface = None
         self._bus = None
 
     def _check_connected(self) -> None:
@@ -116,10 +119,13 @@ class RAUC:
         """Return status of all RAUC slots (A and B)."""
         self._check_connected()
         try:
+            # 1. Execute the native RAUC D-Bus method call helper
             slots = await self._iface.call_get_slot_status()
             result: list[dict[str, Any]] = []
-            for slot_name, slot_info in slots:
-                # dbus-fast returns Variant objects; unwrap with .value
+            
+        
+            for _, slot_name, slot_info in slots:
+                
                 def _v(key: str, default: Any = "", slot_info=slot_info) -> Any:
                     val = slot_info.get(key)
                     return val.value if val is not None else default
@@ -137,13 +143,14 @@ class RAUC:
         except Exception as err:
             raise DBusMethodError(f"RAUC GetSlotStatus failed: {err}") from err
 
+
     async def get_booted_slot(self) -> str:
         """Return the name of the currently booted RAUC slot (A or B)."""
         self._check_connected()
         try:
-            result = await self._iface.get_boot_slot()
-            # dbus-fast may return a Variant — unwrap it
-            return result.value if hasattr(result, "value") else result
+            variant = await self._props_iface.call_get(_DBUS_IFACE, "BootSlot")
+            return variant.value
+
         except Exception as err:
             raise DBusMethodError(f"RAUC GetBootSlot failed: {err}") from err
 
@@ -154,7 +161,8 @@ class RAUC:
         """
         self._check_connected()
         try:
-            return await self._iface.get_operation()
+            variant = await self._props_iface.call_get(_DBUS_IFACE, "Operation")
+            return variant.value
         except Exception as err:
             raise DBusMethodError(f"RAUC GetOperation failed: {err}") from err
 
