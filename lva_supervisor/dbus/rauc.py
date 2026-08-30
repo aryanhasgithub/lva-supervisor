@@ -17,18 +17,26 @@ _DBUS_OBJECT = "/"
 _DBUS_IFACE = "de.pengutronix.rauc.Installer"
 DBUS_PROPERTIES_IFACE = "org.freedesktop.DBus.Properties"
 
+INSTALL_TIMEOUT_SECONDS = 600  # 10 minutes, matches the /system/os-update docstring
+
+
 class SignalResult:
 
     def __init__(self) -> None:
-        self._queue: asyncio.Queue[tuple[int, str]] = asyncio.Queue()
+        self._queue: asyncio.Queue[int] = asyncio.Queue()
 
-    def send_signal(self, return_code: int, last_error: str) -> None:
-        """Callback fed into dbus-fast to capture the signal data."""
-        self._queue.put_nowait((return_code, last_error))
+    def send_signal(self, return_code: int) -> None:
+        """Callback fed into dbus-fast to capture the signal data.
 
-    async def wait_for_signal(self) -> tuple[int, str]:
-        """Awaits indefinitely until the host OS finishes processing."""
-        return await self._queue.get()
+        RAUC's Completed signal carries only the integer result code —
+        do not add a second parameter here, dbus-fast will call this
+        positionally with exactly the signal's declared arguments.
+        """
+        self._queue.put_nowait(return_code)
+
+    async def wait_for_signal(self) -> int:
+        """Awaits until the host OS finishes processing, or times out."""
+        return await asyncio.wait_for(self._queue.get(), timeout=INSTALL_TIMEOUT_SECONDS)
 
 
 class RAUC:
@@ -63,13 +71,22 @@ class RAUC:
         if not self._bus or not self._iface:
             raise DBusConnectionError("RAUC not connected")
 
+    async def _get_last_error(self) -> str:
+        """Read the LastError property (only meaningful after a failure)."""
+        try:
+            variant = await self._props_iface.call_get(_DBUS_IFACE, "LastError")
+            return variant.value
+        except Exception as err:  # pylint: disable=broad-exception-caught
+            _LOGGER.warning("RAUC: failed to read LastError: %s", err)
+            return ""
+
     # =========================================================================
     # HA Production Signal Context Manager
     # =========================================================================
 
     @asynccontextmanager
     async def signal_completed(self) -> AsyncIterator[SignalResult]:
-        """Context manager tracking signals indefinitely with no timeout."""
+        """Context manager tracking signals, bounded by INSTALL_TIMEOUT_SECONDS."""
         self._check_connected()
         result = SignalResult()
 
@@ -95,16 +112,22 @@ class RAUC:
                 await self._iface.call_install_bundle(bundle_url, {})
                 _LOGGER.info("RAUC: InstallBundle called, awaiting signal...")
 
-                # Wait indefinitely until the raw host engine returns.
-                return_code, last_error = await signal.wait_for_signal()
+                try:
+                    return_code = await signal.wait_for_signal()
+                except asyncio.TimeoutError as err:
+                    raise DBusMethodError(
+                        f"RAUC install timed out after {INSTALL_TIMEOUT_SECONDS}s "
+                        "waiting for the Completed signal"
+                    ) from err
 
                 if return_code != 0:
+                    last_error = await self._get_last_error()
                     raise DBusMethodError(
                         f"RAUC install failed with code {return_code}: {last_error}"
                     )
 
                 _LOGGER.info("RAUC: install completed successfully")
-                return return_code, last_error
+                return return_code, ""
 
         except DBusMethodError:
             raise
@@ -119,13 +142,11 @@ class RAUC:
         """Return status of all RAUC slots (A and B)."""
         self._check_connected()
         try:
-            # 1. Execute the native RAUC D-Bus method call helper
             slots = await self._iface.call_get_slot_status()
             result: list[dict[str, Any]] = []
-            
-        
-            for _, slot_name, slot_info in slots:
-                
+
+            for slot_name, slot_info in slots:
+
                 def _v(key: str, default: Any = "", slot_info=slot_info) -> Any:
                     val = slot_info.get(key)
                     return val.value if val is not None else default
