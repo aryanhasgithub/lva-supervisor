@@ -215,7 +215,6 @@ async def update_stream(request: web.Request) -> web.StreamResponse:
                 break
             await resp.write(_sse({**event, "type": "log"}))
     finally:
-        update_task.cancel()
         await resp.write_eof()
 
     return resp
