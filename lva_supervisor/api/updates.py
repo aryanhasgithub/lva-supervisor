@@ -15,7 +15,13 @@ from aiohttp import web
 from ..const import CONTAINER_SUPERVISOR, MANAGED_CONTAINERS
 from ..coresys import CoreSys
 from ..exceptions import DockerError
-from ..utils.updates import fetch_manifest, get_local_version, is_update_available
+from ..utils.updates import (
+    fetch_manifest,
+    get_local_version,
+    get_manifest_component,
+    is_update_available,
+    is_version_satisfied,
+)
 
 from typing import Any
 
@@ -39,17 +45,48 @@ def _err_response(err: Exception, status: int = 500) -> web.Response:
 
 @routes.get("/updates")
 async def check_updates(request: web.Request) -> web.Response:
-    """Compare local image version labels vs lva-version manifest using semver."""
+    """Compare local image version labels vs lva-version manifest using semver.
+
+    Also checks each component's "requires" block (if present) against the
+    other managed containers' *current local* versions — since updates only
+    ever move a component to the manifest's latest, a component whose
+    requirements aren't met by what's currently running should be blocked
+    from updating until its dependencies are updated first.
+    """
     coresys = _get_coresys(request)
 
     async with aiohttp.ClientSession() as session:
         manifest = await fetch_manifest(session)
 
+    # Local versions for every managed container, gathered up front so the
+    # requires-check below doesn't need to re-inspect images per dependency.
+    # "lva-os" is included here too (read from hostname1, not a container
+    # image label) since components can depend on a minimum OS version —
+    # e.g. lva-supervisor requiring lva-os >= 0.1 because it needs a D-Bus
+    # interface only present from that OS release onward.
+    local_versions: dict[str, str | None] = {}
+    for name in MANAGED_CONTAINERS:
+        container = coresys.containers[name]
+        local_versions[name] = await get_local_version(coresys, container.image)
+    try:
+        local_versions["lva-os"] = await coresys.hostname.get_os_version()
+    except Exception as err:  # pylint: disable=broad-exception-caught
+        _LOGGER.warning("Could not read OS version from hostname1: %s", err)
+        local_versions["lva-os"] = None
+
     results: list[dict[str, object]] = []
     for name in MANAGED_CONTAINERS:
         container = coresys.containers[name]
-        local_ver = await get_local_version(coresys, container.image)
-        remote_ver = manifest.get(name) if manifest else None
+        local_ver = local_versions[name]
+        component = get_manifest_component(manifest, name)
+        remote_ver = component.get("version")
+        requires: dict[str, str] = component.get("requires") or {}
+
+        unmet: dict[str, dict[str, str | None]] = {}
+        for dep_name, dep_min in requires.items():
+            dep_local = local_versions.get(dep_name)
+            if not is_version_satisfied(dep_local, dep_min):
+                unmet[dep_name] = {"current": dep_local, "required": dep_min}
 
         results.append(
             {
@@ -58,6 +95,9 @@ async def check_updates(request: web.Request) -> web.Response:
                 "update_available": is_update_available(local_ver, remote_ver),
                 "local_version": local_ver,
                 "remote_version": remote_ver,
+                "requires": requires,
+                "requirements_met": not unmet,
+                "unmet_requirements": unmet,
             }
         )
 
@@ -69,6 +109,9 @@ async def update_component(request: web.Request) -> web.Response:
     """Pull latest image for a specific component.
 
     Body: { "name": "lva-audio" }
+
+    Refuses to update if the component's manifest "requires" block isn't
+    satisfied by the currently running versions of its dependencies.
     """
     coresys = _get_coresys(request)
 
@@ -82,6 +125,38 @@ async def update_component(request: web.Request) -> web.Response:
         return _err_response(ValueError("'name' is required"), 400)
     if name not in MANAGED_CONTAINERS:
         return _err_response(ValueError(f"Unknown component '{name}'"), 404)
+
+    async with aiohttp.ClientSession() as session:
+        manifest = await fetch_manifest(session)
+    component = get_manifest_component(manifest, name)
+    requires: dict[str, str] = component.get("requires") or {}
+
+    if requires:
+        unmet: dict[str, dict[str, str | None]] = {}
+        for dep_name, dep_min in requires.items():
+            if dep_name == "lva-os":
+                # OS version comes from hostname1, not a container image.
+                try:
+                    dep_local = await coresys.hostname.get_os_version()
+                except Exception as err:  # pylint: disable=broad-exception-caught
+                    _LOGGER.warning("Could not read OS version from hostname1: %s", err)
+                    dep_local = None
+            else:
+                dep_container = coresys.containers.get(dep_name)
+                dep_local = (
+                    await get_local_version(coresys, dep_container.image)
+                    if dep_container
+                    else None
+                )
+            if not is_version_satisfied(dep_local, dep_min):
+                unmet[dep_name] = {"current": dep_local, "required": dep_min}
+        if unmet:
+            return _err_response(
+                ValueError(
+                    f"'{name}' requires updated dependencies first: {unmet}"
+                ),
+                409,
+            )
 
     try:
         container = coresys.containers[name]
@@ -177,7 +252,7 @@ async def check_os_update(request: web.Request) -> web.Response:
     coresys = _get_coresys(request)
 
     async with aiohttp.ClientSession() as session:
-        manifest: dict[str, str] | None = await fetch_manifest(session)
+        manifest: dict[str, Any] | None = await fetch_manifest(session)
 
     if not manifest:
         return web.json_response(

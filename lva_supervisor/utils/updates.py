@@ -1,5 +1,5 @@
 """LVA Supervisor shared update and version tracking utilities."""
-from __future__ import annotations 
+from __future__ import annotations
 
 import logging
 import aiohttp
@@ -10,7 +10,7 @@ from ..const import VERSION_MANIFEST_URL
 
 if TYPE_CHECKING:
     from ..coresys import CoreSys
-    
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -33,6 +33,37 @@ def is_update_available(local: str | None, remote: str | None) -> bool:
     except ValueError:
         # Not valid semver — fall back to plain string inequality comparison
         return local != remote
+
+
+def is_version_satisfied(local: str | None, minimum: str | None) -> bool:
+    """Return True if local >= minimum. Missing/unparsable versions fail closed."""
+    if not minimum:
+        return True
+    if not local:
+        return False
+    try:
+        local_v = semver.Version.parse(strip_v(local))
+        minimum_v = semver.Version.parse(strip_v(minimum))
+        return local_v >= minimum_v
+    except ValueError:
+        return local == minimum
+
+
+def get_manifest_component(
+    manifest: dict[str, Any] | None, name: str
+) -> dict[str, Any]:
+    """Return a component's manifest entry as {"version": ..., "requires": {...}}.
+
+    Manifest entries are objects: {"version": "1.0.0", "requires": {...}}.
+    "requires" is optional and omitted when a component has no minimum
+    dependency versions.
+    """
+    if not manifest:
+        return {}
+    entry = manifest.get(name)
+    if not isinstance(entry, dict):
+        return {}
+    return entry
 
 
 async def fetch_manifest(session: aiohttp.ClientSession) -> dict[str, Any] | None:
