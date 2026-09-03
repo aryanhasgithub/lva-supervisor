@@ -148,11 +148,13 @@ class NetworkManager:
         state      = (await props_iface.call_get(IFACE_DEVICE, "State")).value # type: ignore
         dev_type   = (await props_iface.call_get(IFACE_DEVICE, "DeviceType")).value # type: ignore
         ip4_path   = (await props_iface.call_get(IFACE_DEVICE, "Ip4Config")).value # type: ignore
+        mac_addr = (await props_iface.call_get(IFACE_DEVICE, "HwAddress")).value # type: ignore
         _LOGGER.info(iface_name + ": state=%d, type=%d, ip4_path=%s", state, dev_type, ip4_path)
         info: dict[str, Any] = {
             "interface": iface_name,
             "state": state,
             "type": dev_type,
+            "mac": mac_addr,
             "ip4": None,
         }
 
