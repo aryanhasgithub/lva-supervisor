@@ -37,4 +37,4 @@ Releases are triggered by pushing a semver tag. The GitHub Actions workflow buil
 2. A new tag is pushed (e.g. `v1.0.0`).
 3. The build workflow produces and pushes the image to `ghcr.io/aryanhasgithub/lva-supervisor`.
 4. The `stable.json` manifest in [lva-version](https://github.com/aryanhasgithub/lva-version) is updated.
-5. The supervisor's background updater picks up the new version and self-updates.
+5. The user can then update to the new version.
