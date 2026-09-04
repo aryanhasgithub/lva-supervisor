@@ -36,9 +36,16 @@ IFACE_ACTIVE          = "org.freedesktop.NetworkManager.Connection.Active"
 NM_DEVICE_STATE_ACTIVATED = 100
 NM_DEVICE_TYPE_WIFI       = 2
 
-# AP security flag masks
+# AP flags (NM80211ApFlags)
 NM_802_11_AP_FLAGS_PRIVACY = 0x1
-NM_802_11_AP_SEC_KEY_MGMT_PSK = 0x100
+
+# AP security flags (NM80211ApSecurityFlags) — bitmask found in WpaFlags
+# (WPA1 IE) and RsnFlags (RSN IE, i.e. WPA2/WPA3) on the AccessPoint object.
+NM_802_11_AP_SEC_KEY_MGMT_PSK    = 0x00000100
+NM_802_11_AP_SEC_KEY_MGMT_802_1X = 0x00000200  # enterprise / EAP
+NM_802_11_AP_SEC_KEY_MGMT_SAE    = 0x00000400  # WPA3-personal
+NM_802_11_AP_SEC_KEY_MGMT_OWE    = 0x00000800
+NM_802_11_AP_SEC_KEY_MGMT_OWE_TM = 0x00001000  # OWE transition mode
 
 
 def _ip4_to_uint32(ip: str) -> int:
@@ -47,6 +54,46 @@ def _ip4_to_uint32(ip: str) -> int:
 
 def _uint32_to_ip4(n: int) -> str:
     return socket.inet_ntoa(struct.pack("=I", n))
+
+
+def _classify_ap_security(flags: int, wpa_flags: int, rsn_flags: int) -> tuple[str, str]:
+    """Classify an AP's security from its beacon flags.
+
+    Returns (security_label, key_mgmt) where key_mgmt is the value to use
+    for the 802-11-wireless-security "key-mgmt" property when connecting
+    ("" means no security block is needed at all).
+    """
+    privacy = bool(flags & NM_802_11_AP_FLAGS_PRIVACY)
+    combined = wpa_flags | rsn_flags
+
+    if not privacy and combined == 0:
+        return "open", ""
+
+    if privacy and combined == 0:
+        # Privacy bit set but no WPA/RSN IE at all -> WEP
+        return "wep", "none"
+
+    enterprise = bool(combined & NM_802_11_AP_SEC_KEY_MGMT_802_1X)
+    sae = bool(rsn_flags & NM_802_11_AP_SEC_KEY_MGMT_SAE)
+    owe = bool(combined & (NM_802_11_AP_SEC_KEY_MGMT_OWE | NM_802_11_AP_SEC_KEY_MGMT_OWE_TM))
+    psk = bool(combined & NM_802_11_AP_SEC_KEY_MGMT_PSK)
+
+    if sae and psk:
+        # AP advertises both SAE and PSK AKMs -> WPA2/WPA3 transition mode.
+        # "wpa-psk" as key-mgmt covers WPA2+WPA3-personal per NM's own docs.
+        return "wpa2-wpa3-personal", "wpa-psk"
+    if sae:
+        return "wpa3-sae", "sae"
+    if enterprise:
+        return "wpa-enterprise", "wpa-eap"
+    if owe:
+        return "owe", "owe"
+    if psk:
+        is_wpa2 = bool(rsn_flags & NM_802_11_AP_SEC_KEY_MGMT_PSK)
+        return ("wpa2-psk" if is_wpa2 else "wpa-psk"), "wpa-psk"
+
+    # Privacy bit set, WPA/RSN IE present, but none of the known AKMs matched
+    return "unknown", "wpa-psk"
 
 
 # ---------------------------------------------------------------------------
@@ -71,6 +118,7 @@ class AccessPointInterface(Protocol):
     async def get_strength(self) -> int: ...
     async def get_frequency(self) -> int: ...
     async def get_flags(self) -> int: ...
+    async def get_wpa_flags(self) -> int: ...
     async def get_rsn_flags(self) -> int: ...
     async def get_hw_address(self) -> str: ...
 
@@ -170,9 +218,9 @@ class NetworkManager:
         """Read IPv4 address info from an IP4Config object."""
         introspection = await self._bus.introspect(DBUS_NAME, path)  # type: ignore
         proxy = self._bus.get_proxy_object(DBUS_NAME, path, introspection)  # type: ignore
-        
+
         props_iface = proxy.get_interface(DBUS_PROPERTIES_IFACE)  # type: ignore
-        
+
         raw_addresses = (await props_iface.call_get(IFACE_IP4, "AddressData")).value # type: ignore
         addresses: list[dict[str, Any]] = []
         for entry in raw_addresses:
@@ -210,7 +258,14 @@ class NetworkManager:
         """Trigger a scan and return visible access points on an interface.
 
         Returns a list of dicts:
-          { ssid, bssid, strength (0-100), frequency, secured (bool) }
+          {
+            ssid, bssid, strength (0-100), frequency,
+            secured (bool),
+            security (str: "open" | "wep" | "wpa-psk" | "wpa2-psk" |
+                      "wpa2-wpa3-personal" | "wpa3-sae" | "wpa-enterprise" |
+                      "owe" | "unknown"),
+            key_mgmt (str: value to pass as wifi_connect(key_mgmt=...))
+          }
         """
         self._check_connected()
         dev_path = await self._find_wifi_device(interface)
@@ -251,6 +306,7 @@ class NetworkManager:
         strength = await ap_iface.get_strength()
         frequency = await ap_iface.get_frequency()
         flags = await ap_iface.get_flags()
+        wpa_flags = await ap_iface.get_wpa_flags()
         rsn_flags = await ap_iface.get_rsn_flags()
         bssid = await ap_iface.get_hw_address()
 
@@ -263,15 +319,16 @@ class NetworkManager:
         except Exception:  # pylint: disable=broad-exception-caught
             ssid = ""
 
-        # Network is secured if it has privacy flag or RSN/WPA flags
-        secured = bool(flags & NM_802_11_AP_FLAGS_PRIVACY) or rsn_flags != 0
+        security, key_mgmt = _classify_ap_security(flags, wpa_flags, rsn_flags)
 
         return {
             "ssid": ssid,
             "bssid": bssid,
             "strength": strength,
             "frequency": frequency,
-            "secured": secured,
+            "secured": security != "open",
+            "security": security,
+            "key_mgmt": key_mgmt,
         }
 
     # =========================================================================
@@ -283,16 +340,27 @@ class NetworkManager:
         interface: str,
         ssid: str,
         password: str | None = None,
+        key_mgmt: str | None = None,
     ) -> None:
         """Connect to a WiFi network.
 
         Builds the connection profile and calls AddAndActivateConnection.
-        If password is None, connects to an open network.
+
+        key_mgmt should normally come from a prior wifi_scan() result's
+        "key_mgmt" field for the target AP (so WPA3-SAE, WEP, etc. get the
+        right profile). If omitted, falls back to "wpa-psk" when a password
+        is given, or open (no security block) otherwise.
+
+        Enterprise (wpa-eap) networks are not supported — this function has
+        no inputs for identity/cert data, so it raises rather than sending
+        a profile that can never authenticate.
         """
         self._check_connected()
         dev_path = await self._find_wifi_device(interface)
 
         ssid_bytes = ssid.encode("utf-8")
+        if key_mgmt is None:
+            key_mgmt = "wpa-psk" if password else ""
 
         conn: dict[str, Any] = {
             "connection": {
@@ -312,15 +380,34 @@ class NetworkManager:
             },
         }
 
-        if password:
+        if key_mgmt == "wpa-eap":
+            raise DBusMethodError(
+                "wifi_connect() does not support wpa-eap (enterprise) networks"
+            )
+
+        if key_mgmt in ("wpa-psk", "sae"):
+            conn["802-11-wireless"]["security"] = Variant("s", "802-11-wireless-security")
+            sec: dict[str, Variant] = {"key-mgmt": Variant("s", key_mgmt)}
+            if password:
+                sec["psk"] = Variant("s", password)
+            conn["802-11-wireless-security"] = sec
+        elif key_mgmt == "none" and password:
+            # WEP
             conn["802-11-wireless"]["security"] = Variant("s", "802-11-wireless-security")
             conn["802-11-wireless-security"] = {
-                "key-mgmt": Variant("s", "wpa-psk"),
-                "auth-alg": Variant("s", "open"),
-                "psk": Variant("s", password),
+                "key-mgmt": Variant("s", "none"),
+                "wep-key-type": Variant("u", 1),  # NM_WEP_KEY_TYPE_KEY
+                "wep-key0": Variant("s", password),
             }
+        elif key_mgmt == "owe":
+            conn["802-11-wireless"]["security"] = Variant("s", "802-11-wireless-security")
+            conn["802-11-wireless-security"] = {"key-mgmt": Variant("s", "owe")}
+        # else: key_mgmt is "" (open network) — no security block needed
 
-        _LOGGER.info("Connecting to WiFi SSID '%s' on %s", ssid, interface)
+        _LOGGER.info(
+            "Connecting to WiFi SSID '%s' on %s (key-mgmt=%s)",
+            ssid, interface, key_mgmt or "open",
+        )
         try:
             await self._iface_nm.call_add_and_activate_connection(
                 conn,

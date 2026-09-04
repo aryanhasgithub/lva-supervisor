@@ -12,7 +12,7 @@ import logging
 import aiohttp
 from aiohttp import web
 
-from ..const import CONTAINER_SUPERVISOR, MANAGED_CONTAINERS
+from ..const import CONTAINER_SUPERVISOR, MANAGED_CONTAINERS, RELEASE_URL
 from ..coresys import CoreSys
 from ..exceptions import DockerError
 from ..utils.updates import (
@@ -287,7 +287,7 @@ async def check_os_update(request: web.Request) -> web.Response:
             "update_available": is_update_available(current_version, remote_ver),
             "notes": "",
             "url": (
-                f"https://github.com/aryanhasgithub/lva-os/releases/tag/{remote_ver}"
+                f"{RELEASE_URL}{remote_ver}"
                 if remote_ver
                 else ""
             ),

@@ -59,6 +59,8 @@ VERSION_MANIFEST_URL = (
     "https://raw.githubusercontent.com/aryanhasgithub/lva-version/main/stable.json"
 )
 
+RELEASE_URL = "https://github.com/aryanhasgithub/lva-os/releases/tag/"
+
 # =============================================================================
 # Docker
 # =============================================================================

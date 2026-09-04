@@ -188,6 +188,14 @@ async def wifi_scan(request: web.Request) -> web.Response:
     """Scan for WiFi networks on an interface.
 
     Query param: interface (required) — e.g. ?interface=wlan0
+
+    Each result includes:
+      ssid, bssid, strength, frequency,
+      secured (bool),
+      security ("open" | "wep" | "wpa-psk" | "wpa2-psk" |
+                "wpa2-wpa3-personal" | "wpa3-sae" | "wpa-enterprise" |
+                "owe" | "unknown"),
+      key_mgmt — pass this straight back in POST /network/wifi/connect
     """
     coresys = _get_coresys(request)
     interface = request.query.get("interface", "").strip()
@@ -211,7 +219,11 @@ async def wifi_connect(request: web.Request) -> web.Response:
     {
         "interface": "wlan0",
         "ssid": "MyNetwork",
-        "password": "secret"     ← omit for open networks
+        "password": "secret",   ← omit for open/OWE networks
+        "key_mgmt": "wpa-psk"   ← optional; use the "key_mgmt" value from
+                                   the matching /network/wifi/scan result.
+                                   Omit to fall back to "wpa-psk" (if a
+                                   password is given) or open.
     }
     """
     coresys = _get_coresys(request)
@@ -224,6 +236,7 @@ async def wifi_connect(request: web.Request) -> web.Response:
     interface = body.get("interface", "").strip()
     ssid = body.get("ssid", "").strip()
     password: str | None = body.get("password")
+    key_mgmt: str | None = body.get("key_mgmt")
 
     if not interface:
         return _err_response(ValueError("'interface' is required"), 400)
@@ -231,7 +244,9 @@ async def wifi_connect(request: web.Request) -> web.Response:
         return _err_response(ValueError("'ssid' is required"), 400)
 
     try:
-        await coresys.network.wifi_connect(interface, ssid, password or None)
+        await coresys.network.wifi_connect(
+            interface, ssid, password or None, key_mgmt or None
+        )
         return web.json_response({"result": "ok", "ssid": ssid})
     except DBusConnectionError as err:
         return _err_response(err, 503)
