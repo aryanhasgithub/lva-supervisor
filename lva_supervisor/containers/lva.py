@@ -56,6 +56,7 @@ class DockerLVA(DockerInterface):
                 "PULSE_COOKIE=/tmp/pulse-cookie",
                 "PULSE_SERVER=unix:/run/lva/audio/pulse/native",
                 "PULSE_RUNTIME_PATH=/run/lva/audio/pulse",
+                "XDG_RUNTIME_DIR=/run/lva/audio",
             ],
             # Override upstream entrypoint with our wrapper that reads master.env
             "Entrypoint": ["/bin/bash", "/etc/lva/lva-entrypoint.sh"],

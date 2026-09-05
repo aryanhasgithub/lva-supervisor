@@ -39,7 +39,7 @@ class DockerAudio(DockerInterface):
         config: dict[str, object] = {
             "Image": self.image,
             "Env": [
-                "XDG_RUNTIME_DIR=/run/user/0",
+                "XDG_RUNTIME_DIR=/run/lva/audio",
                 "PULSE_RUNTIME_PATH=/run/lva/audio/pulse",
             ],
             "HostConfig": {
