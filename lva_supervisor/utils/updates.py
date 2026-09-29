@@ -90,3 +90,20 @@ async def get_local_version(coresys: CoreSys, image: str) -> str | None:
         return version
     except Exception:  # pylint: disable=broad-exception-caught
         return None
+
+async def get_local_tag_for_repository(
+    coresys: CoreSys, repository: str
+) -> str | None:
+    """Return repository:tag for whatever image Docker has locally under
+    this bare repository name, or None if nothing is loaded yet.
+    """
+    try:
+        images = await coresys.docker.images.list(filters={"reference": repository})
+    except Exception:  # pylint: disable=broad-exception-caught
+        return None
+
+    for image in images:
+        for tag in image.get("RepoTags") or []:
+            if tag.rpartition(":")[0] == repository:
+                return tag
+    return None

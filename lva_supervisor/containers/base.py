@@ -30,7 +30,7 @@ class ContainerBase(ABC):
     Subclasses must provide an `instance` property pointing to their
     DockerInterface subclass.
     """
-
+    PREBAKED_ON_FIRST_BOOT: bool = False
     def __init__(self, coresys: "CoreSys") -> None:
         self.coresys = coresys
         self._updating: bool = False
@@ -163,6 +163,41 @@ class ContainerBase(ABC):
         """Return container state."""
         return await self.instance.state()
 
+    async def bootstrap_prebaked(self) -> bool:
+        """Run directly from whatever image docker load already placed on
+        disk, bypassing pull()/attach() entirely.
+
+        Only ever called once, on first boot, for containers flagged
+        PREBAKED_ON_FIRST_BOOT — see CoreSys._bootstrap_prebaked_containers().
+
+        Returns True if it successfully ran from a local image. Returns
+        False if nothing was found locally (caller falls back to the
+        normal load() path in that case, which will pull as usual).
+
+        After this runs once, this container is never touched by this
+        method again — every subsequent boot goes through the completely
+        normal load()/attach() path below, exactly like every other
+        container.
+        """
+        from ..utils.updates import get_local_tag_for_repository
+
+        local_tag = await get_local_tag_for_repository(
+            self.coresys, self.instance.image
+        )
+        if not local_tag:
+            _LOGGER.warning(
+                "[%s] Expected pre-baked image but found none locally",
+                self.name,
+            )
+            return False
+
+        _LOGGER.info(
+            "[%s] First boot — running pre-baked %s directly, no pull",
+            self.name,
+            local_tag,
+        )
+        await self.instance.run(image_override=local_tag)
+        return True
     # -------------------------------------------------------------------------
     # Lifecycle delegates
     # -------------------------------------------------------------------------

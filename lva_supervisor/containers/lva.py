@@ -43,7 +43,7 @@ class DockerLVA(DockerInterface):
     def image(self) -> str:
         return IMAGE_LVA
 
-    async def run(self) -> None:
+    async def run(self,image_override: str | None = None) -> None:
         """Create and start the lva container."""
         _LOGGER.info("[%s] Creating container", self.name)
 

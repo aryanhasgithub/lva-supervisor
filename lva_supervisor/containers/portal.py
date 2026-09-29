@@ -32,7 +32,7 @@ class DockerPortal(DockerInterface):
     def image(self) -> str:
         return IMAGE_PORTAL
 
-    async def run(self) -> None:
+    async def run(self,image_override: str | None = None) -> None:
         """Create and start the lva-portal container."""
         _LOGGER.info("[%s] Creating container", self.name)
         config: dict[str, object] = {

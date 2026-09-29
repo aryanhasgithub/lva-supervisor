@@ -26,7 +26,7 @@ class SupervisorDockerWrapper(DockerInterface):
     def image(self) -> str:
         return IMAGE_SUPERVISOR
 
-    async def run(self) -> None:
+    async def run(self,image_override: str | None = None) -> None:
         """Overridden configuration hook — host script handles supervisor container creation."""
 
 

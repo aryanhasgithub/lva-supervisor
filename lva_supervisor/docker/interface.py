@@ -53,11 +53,15 @@ class DockerInterface(ABC):
         """Full image reference."""
 
     @abstractmethod
-    async def run(self) -> None:
+    async def run(self, image_override: str | None = None) -> None:
         """Create and start the container with full config.
 
         Subclass provides volumes, env vars, network, devices, etc.
         Called by ContainerBase when the container does not exist yet.
+
+        image_override: when set, use this exact repository:tag instead of
+        self.image. Used only by ContainerBase.bootstrap_prebaked() on
+        first boot, to run a pre-baked image directly without a pull.
         """
 
     # -------------------------------------------------------------------------

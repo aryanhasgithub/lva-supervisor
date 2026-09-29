@@ -33,11 +33,13 @@ class DockerAudio(DockerInterface):
     def image(self) -> str:
         return IMAGE_AUDIO
 
-    async def run(self) -> None:
+    async def run(self, image_override: str | None = None) -> None:
         """Create and start the lva-audio container."""
+        image = image_override or self.image
         _LOGGER.info("[%s] Creating container", self.name)
+    
         config: dict[str, object] = {
-            "Image": self.image,
+            "Image": image,
             "Env": [
                 "XDG_RUNTIME_DIR=/run/lva/audio",
                 "PULSE_RUNTIME_PATH=/run/lva/audio/pulse",
@@ -63,6 +65,7 @@ class DockerAudio(DockerInterface):
 class Audio(ContainerBase):
     """LVA Audio plugin."""
 
+    PREBAKED_ON_FIRST_BOOT = True 
     def __init__(self, coresys: "CoreSys") -> None:
         super().__init__(coresys)
         self._instance = DockerAudio(coresys)
