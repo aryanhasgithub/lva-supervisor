@@ -125,7 +125,8 @@ class CoreSys:
 
         # Read this before anything below has a chance to create the file —
         # it tells us whether this run IS the first boot, which determines
-        # whether we bounce the portal after container startup.
+        # whether we bounce the portal after container startup, and whether
+        # pre-baked containers skip their first-boot pull.
         is_first_boot = not FIRSTBOOT_DONE.exists()
 
         await self._docker.connect()
@@ -138,6 +139,16 @@ class CoreSys:
             await self._connect_dbus_interfaces()
         except Exception as err:  # pylint: disable=broad-exception-caught
             _LOGGER.warning("D-Bus connect failed: %s", err)
+
+        # First-boot-only: run any pre-baked containers (lva-cli, lva-audio)
+        # directly from whatever docker load already placed on disk,
+        # bypassing pull()/attach() entirely. Must run BEFORE
+        # _start_containers() — any container this succeeds for will
+        # already exist and be running by the time the normal loop below
+        # reaches it, so load()'s attach() check just finds it fine and
+        # does nothing further.
+        if is_first_boot:
+            await self._bootstrap_prebaked_containers()
 
         await self._start_containers()
 
@@ -233,6 +244,49 @@ class CoreSys:
     # =========================================================================
     # Container startup
     # =========================================================================
+
+    async def _bootstrap_prebaked_containers(self) -> None:
+        """First-boot-only: run pre-baked containers directly from disk,
+        bypassing pull()/attach().
+
+        Containers whose image is baked into data.ext4 at Buildroot build
+        time (see fetch-container-image.sh / create-data-partition.sh) are
+        flagged PREBAKED_ON_FIRST_BOOT=True on their ContainerBase subclass
+        (currently Cli and Audio). For those, docker load already made the
+        image available locally before the supervisor even started — so
+        calling pull() on first boot would just fetch whatever :latest
+        currently is on the registry, which may not match what's on disk
+        and wastes a pull that was never necessary.
+
+        Containers this succeeds for are simply already running by the
+        time _start_containers() reaches them in the normal loop — load()'s
+        attach() check will find them already up and do nothing further,
+        exactly as it already does today for a container that's fine.
+
+        If no local image is found for a flagged container (e.g. a build
+        variant without the prebake, or a corrupted data.ext4), this logs
+        and falls through — the normal load() path right after this will
+        pull it instead, same as before this method existed.
+        """
+        for name in CONTAINER_START_ORDER:
+            container = self._containers[name]
+            if not container.PREBAKED_ON_FIRST_BOOT:
+                continue
+            try:
+                ran = await container.bootstrap_prebaked()
+                if not ran:
+                    _LOGGER.info(
+                        "[%s] No pre-baked image found — normal load() "
+                        "will pull it instead",
+                        name,
+                    )
+            except Exception as err:  # pylint: disable=broad-exception-caught
+                _LOGGER.error(
+                    "[%s] bootstrap_prebaked failed: %s — normal load() "
+                    "will attempt a pull instead",
+                    name,
+                    err,
+                )
 
     async def _start_containers(self) -> None:
         """Start all managed containers in order."""
