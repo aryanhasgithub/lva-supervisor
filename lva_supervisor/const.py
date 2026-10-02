@@ -56,7 +56,7 @@ IMAGE_PORTAL = f"{GHCR_BASE}/lva-portal"
 IMAGE_CLI = f"{GHCR_BASE}/lva-cli"
 IMAGE_SUPERVISOR = f"{GHCR_BASE}/lva-supervisor"
 VERSION_MANIFEST_URL = (
-    "https://raw.githubusercontent.com/aryanhasgithub/lva-version/main/stable.json"
+    "https://aryanhasgithub.github.io/lva-version/stable.json"
 )
 
 RELEASE_URL = "https://github.com/aryanhasgithub/lva-os/releases/tag/"
