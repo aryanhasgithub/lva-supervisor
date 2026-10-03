@@ -27,6 +27,18 @@ _LOGGER = logging.getLogger(__name__)
 ProgressCallback = Callable[[str], Coroutine[Any, Any, None]] | None
 
 
+def _image_repository(ref: str) -> str:
+    """Return an image reference without its tag or digest.
+
+    "ghcr.io/x/lva-cli:0.1.0" -> "ghcr.io/x/lva-cli"
+    "localhost:5000/lva-cli"  -> "localhost:5000/lva-cli" (port is kept)
+    """
+    ref = ref.split("@", 1)[0]
+    head, sep, last = ref.rpartition("/")
+    return f"{head}{sep}{last.split(':', 1)[0]}"
+
+
+
 # =============================================================================
 # DockerInterface — low-level aiodocker wrapper
 # =============================================================================
@@ -89,7 +101,11 @@ class DockerInterface(ABC):
             ) from err
 
         running_image = info["Config"]["Image"]
-        if running_image != self.image:
+        # Compare repositories only. On first boot the pre-baked container is
+        # created from an explicit "repo:tag" (image_override), while
+        # self.image is the bare repo. A strict comparison would always
+        # mismatch and tear down the container we just started.
+        if _image_repository(running_image) != _image_repository(self.image):
             _LOGGER.warning(
                 "[%s] Image mismatch: running=%s expected=%s — will reinstall",
                 self.name,
