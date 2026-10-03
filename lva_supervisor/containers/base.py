@@ -88,8 +88,19 @@ class ContainerBase(ABC):
             attached = await self.instance.attach()
         except DockerError:
             _LOGGER.warning("[%s] Reinstalling due to image mismatch", self.name)
+            # Pull BEFORE removing, same ordering as update(): if the registry
+            # is unreachable the existing container is left untouched instead
+            # of being deleted with nothing to replace it.
+            try:
+                await self.instance.pull(progress=_write_progress)
+            except DockerPullError as err:
+                _LOGGER.error(
+                    "[%s] Pull failed (%s) — keeping existing container", self.name, err
+                )
+                if not await self.instance.is_running():
+                    await self.start()
+                return
             await self.instance.remove()
-            await self.instance.pull(progress=_write_progress)
             await self.instance.run()
             return
 
